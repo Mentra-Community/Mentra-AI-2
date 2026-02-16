@@ -1,0 +1,156 @@
+import React, { useRef, useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import Header from '../components/Header';
+import SettingItem from '../ui/setting-item';
+import ToggleSwitch from '../ui/toggle-switch';
+import SimpleToggle from '../ui/simple-toggle';
+import { updateTheme, updateChatHistoryEnabled, fetchUserSettings } from '../api/settings.api';
+
+interface SettingsProps {
+  onBack: () => void;
+  isDarkMode: boolean;
+  onToggleDarkMode: () => void;
+  userId: string;
+  onChatHistoryToggle?: (enabled: boolean) => void;
+}
+
+interface SettingItemInfo {
+  settingName: string;
+  description?: string;
+}
+
+const settingItems: Record<string, SettingItemInfo> = {
+  darkMode: {
+    settingName: 'Theme',
+    description: '',
+  },
+  chatHistory: {
+    settingName: 'Chat History',
+    description: 'Save conversations to view later',
+  },
+};
+
+/**
+ * Settings page component
+ */
+function Settings({
+  onBack,
+  isDarkMode,
+  onToggleDarkMode,
+  userId,
+  onChatHistoryToggle,
+}: SettingsProps) {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [chatHistoryEnabled, setChatHistoryEnabled] = useState(false);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+
+  // Fetch user settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await fetchUserSettings(userId);
+        setChatHistoryEnabled(settings.chatHistoryEnabled ?? false);
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+    loadSettings();
+  }, [userId]);
+
+  // Handle chat history toggle
+  const handleChatHistoryToggle = async () => {
+    const newValue = !chatHistoryEnabled;
+    setChatHistoryEnabled(newValue);
+
+    try {
+      await updateChatHistoryEnabled(userId, newValue);
+      console.log('Chat history setting synced:', newValue);
+      onChatHistoryToggle?.(newValue);
+    } catch (error) {
+      console.error('Failed to update chat history setting:', error);
+      setChatHistoryEnabled(!newValue);
+    }
+  };
+
+  // Handle theme toggle
+  const handleThemeToggle = async () => {
+    const newTheme = isDarkMode ? 'light' : 'dark';
+    onToggleDarkMode();
+
+    try {
+      await updateTheme(userId, newTheme);
+      console.log('Theme synced:', newTheme);
+    } catch (error) {
+      console.error('Failed to update theme:', error);
+      onToggleDarkMode();
+    }
+  };
+
+  return (
+    <div
+      className={`h-screen flex flex-col ${isDarkMode ? 'dark' : ''}`}
+      style={{
+        backgroundColor: 'var(--background)',
+        overscrollBehavior: 'none',
+        touchAction: 'pan-y',
+      }}
+    >
+      {/* Header */}
+      <Header
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={onToggleDarkMode}
+        onSettingsClick={onBack}
+        showBackArrow={true}
+      />
+
+      {/* Settings Content */}
+      <motion.div
+        ref={scrollAreaRef}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex-1 px-[24px] pt-[24px] space-y-3 overflow-y-auto"
+        style={{
+          overscrollBehavior: 'none',
+          WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
+        }}
+      >
+        {/* Theme Setting */}
+        <SettingItem
+          isFirstItem={true}
+          isLastItem={false}
+          settingItemName={settingItems.darkMode.settingName}
+          description={settingItems.darkMode.description}
+          customContent={
+            <ToggleSwitch isOn={isDarkMode} onToggle={handleThemeToggle} label="Theme" />
+          }
+        />
+
+        {/* Chat History Setting */}
+        <SettingItem
+          isFirstItem={false}
+          isLastItem={true}
+          settingItemName={settingItems.chatHistory.settingName}
+          description={settingItems.chatHistory.description}
+          customContent={
+            <SimpleToggle
+              isOn={chatHistoryEnabled}
+              onToggle={handleChatHistoryToggle}
+              label="Chat History"
+            />
+          }
+        />
+
+        {/* Version Info */}
+        <div className="pt-8 text-center">
+          <p className="text-[12px] text-gray-500">Mentra AI v1.0.0</p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+export default Settings;

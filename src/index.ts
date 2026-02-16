@@ -1,11 +1,11 @@
 /**
- * MentraOS Camera App - Fullstack Entry Point
+ * Mentra AI - Fullstack Entry Point
  *
  * Uses Bun.serve() with HTML imports for the frontend
  * and Hono-based AppServer for the backend + MentraOS SDK.
  */
 
-import { CameraApp } from "./server/CameraApp";
+import { createMentraAIServer } from "./server/MentraAI";
 import { api } from "./server/routes/routes";
 import { createMentraAuthRoutes } from "@mentra/sdk";
 import indexHtml from "./frontend/index.html";
@@ -27,13 +27,13 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-console.log("📸 Starting Camera App\n");
+console.log("🤖 Starting Mentra AI\n");
 console.log(`   Package: ${PACKAGE_NAME}`);
 console.log(`   Port: ${PORT}`);
 console.log("");
 
 // Initialize App (extends Hono via AppServer)
-const app = new CameraApp({
+const app = await createMentraAIServer({
   packageName: PACKAGE_NAME,
   apiKey: API_KEY,
   port: PORT,
@@ -57,7 +57,7 @@ app.route("/api", api);
 // Start the SDK app (registers SDK routes, checks version)
 await app.start();
 
-console.log(`✅ Camera app running at http://localhost:${PORT}`);
+console.log(`✅ Mentra AI running at http://localhost:${PORT}`);
 console.log(`   • Webview: http://localhost:${PORT}`);
 console.log(`   • API: http://localhost:${PORT}/api/health`);
 console.log("");
