@@ -122,6 +122,14 @@ export class TranscriptionManager {
     this.currentTranscript = removeWakeWord(text);
     this.resetSilenceTimeout();
 
+    // Show live transcription on display glasses HUD
+    if (this.isListening && this.user.appSession?.capabilities?.hasDisplay) {
+      this.user.appSession.layouts.showTextWall(
+        `Listening...\n\n${this.currentTranscript}`,
+        { durationMs: 5000 }
+      );
+    }
+
     // If final transcript, process after a short delay
     if (isFinal) {
       this.resetSilenceTimeout();  // Reset timer on final transcript

@@ -10,7 +10,6 @@ import type { StoredPhoto } from "./PhotoManager";
 import { generateResponse, type GenerateOptions } from "../agent/MentraAgent";
 import { broadcastChatEvent } from "../api/chat";
 import { formatForTTS } from "../utils/tts-formatter";
-import { isVisionQuery } from "../utils/wake-word";
 
 const PROCESSING_SOUND_URL = process.env.PROCESSING_SOUND_URL;
 
@@ -18,6 +17,8 @@ const PROCESSING_SOUND_URL = process.env.PROCESSING_SOUND_URL;
  * QueryProcessor — handles the full query processing pipeline.
  */
 export class QueryProcessor {
+  private processingSoundLooping = false;
+
   constructor(private user: User) {}
 
   /**
@@ -36,8 +37,9 @@ export class QueryProcessor {
 
     console.log(`⏱️ [PIPELINE-START] Query: "${query.slice(0, 60)}..." | prePhoto: ${prePhoto ? 'yes' : 'no'}`);
 
-    // Play processing sound (fire and forget - don't block pipeline)
-    this.playProcessingSound();
+    // Start looping processing sound (fire and forget - don't block pipeline)
+    this.startProcessingSound();
+    this.showStatus("Processing...");
     lap('PROCESSING-SOUND');
 
     // Step 1: Use pre-captured photo (taken at wake word time), or capture now as fallback
@@ -94,10 +96,12 @@ export class QueryProcessor {
     const localTime = this.getLocalTime();
 
     // Step 4: Build agent context
+    const hasDisplay = session.capabilities?.hasDisplay ?? false;
     const context: GenerateOptions["context"] = {
-      hasDisplay: session.capabilities?.hasDisplay ?? false,
+      hasDisplay,
       hasSpeakers: session.capabilities?.hasSpeaker ?? true,
       hasCamera,
+      glassesType: hasDisplay ? 'display' : 'camera',
       location: this.user.location.getCachedContext(),
       localTime,
       timezone: this.user.location.getCachedContext()?.timezone,
@@ -107,12 +111,18 @@ export class QueryProcessor {
     lap('BUILD-CONTEXT');
 
     // Step 5: Generate response
+    this.showStatus("Thinking...");
     let response: string;
     try {
       const result = await generateResponse({
         query,
         photos: photos.length > 0 ? photos : undefined,
         context,
+        onToolCall: (toolName) => {
+          if (toolName === 'search') {
+            this.showStatus("Searching...");
+          }
+        },
       });
       response = result.response;
     } catch (error) {
@@ -142,7 +152,8 @@ export class QueryProcessor {
       context.hasDisplay
     );
 
-    // Step 7: Output response
+    // Step 7: Stop processing sound loop and output response
+    this.stopProcessingSound();
     await this.outputResponse(formattedResponse, context.hasSpeakers, context.hasDisplay);
     lap('OUTPUT-TO-GLASSES');
 
@@ -157,16 +168,44 @@ export class QueryProcessor {
   }
 
   /**
-   * Play the processing sound
+   * Show a status message on the HUD (display glasses only)
    */
-  private async playProcessingSound(): Promise<void> {
-    if (!PROCESSING_SOUND_URL || !this.user.appSession) return;
+  private showStatus(text: string): void {
+    const session = this.user.appSession;
+    if (!session?.capabilities?.hasDisplay) return;
+    session.layouts.showTextWall(text, { durationMs: 10000 });
+  }
 
-    try {
-      await this.user.appSession.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL });
-    } catch (error) {
-      console.debug("Processing sound failed:", error);
+  /**
+   * Start looping the processing sound until stopProcessingSound() is called
+   */
+  private startProcessingSound(): void {
+    if (!PROCESSING_SOUND_URL || !this.user.appSession) return;
+    // Don't play sound on display glasses — they have no speakers and get visual status instead
+    if (this.user.appSession.capabilities?.hasDisplay) return;
+
+    this.processingSoundLooping = true;
+    this.loopProcessingSound();
+  }
+
+  /**
+   * Loop that replays the processing sound until the flag is cleared
+   */
+  private async loopProcessingSound(): Promise<void> {
+    while (this.processingSoundLooping && this.user.appSession) {
+      try {
+        await this.user.appSession.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL! });
+      } catch {
+        break;
+      }
     }
+  }
+
+  /**
+   * Stop the processing sound loop
+   */
+  private stopProcessingSound(): void {
+    this.processingSoundLooping = false;
   }
 
   /**

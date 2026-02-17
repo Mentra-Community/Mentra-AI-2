@@ -30,12 +30,14 @@ export interface GenerateOptions {
     hasDisplay: boolean;
     hasSpeakers: boolean;
     hasCamera: boolean;
+    glassesType: 'display' | 'camera';
     location: LocationContext | null;
     localTime: string;
     timezone?: string;
     notifications: string;
     conversationHistory: ConversationTurn[];
   };
+  onToolCall?: (toolName: string) => void;
 }
 
 /**
@@ -78,6 +80,7 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
     hasSpeakers: context.hasSpeakers,
     hasCamera: context.hasCamera,
     hasMicrophone: true,  // Always true
+    glassesType: context.glassesType,
     responseMode,
     location: context.location,
     localTime: context.localTime,
@@ -122,6 +125,13 @@ export async function generateResponse(options: GenerateOptions): Promise<Genera
         if (toolCalls) {
           toolCallCount += toolCalls.length;
           console.log(`   Tool calls this step: ${toolCalls.length}`);
+          if (options.onToolCall) {
+            for (const tc of toolCalls) {
+              if (tc.payload?.toolName) {
+                options.onToolCall(tc.payload.toolName);
+              }
+            }
+          }
         }
       },
     });

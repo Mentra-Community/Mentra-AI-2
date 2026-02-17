@@ -18,6 +18,7 @@ export interface AgentContext {
   hasSpeakers: boolean;     // Audio output
   hasCamera: boolean;       // Can take photos
   hasMicrophone: boolean;   // Always true for voice input
+  glassesType: 'display' | 'camera';  // Type of glasses connected
 
   // Query context
   responseMode: ResponseMode;
@@ -111,7 +112,7 @@ function buildDeviceCapabilitiesSection(context: AgentContext): string {
 
   // What the glasses CANNOT do
   if (!context.hasCamera) {
-    limitations.push("NO camera - cannot see what the user sees, cannot analyze images");
+    limitations.push("NO camera - cannot see what the user sees, cannot analyze images. If the user asks you to look at something, describe something visual, or asks a question that requires seeing their surroundings, politely explain that these glasses don't have a camera so you can't see what's around them, and suggest they ask a question you can answer with your knowledge or a web search instead.");
   }
   if (!context.hasSpeakers) {
     limitations.push("NO speakers - responses are displayed only, not spoken");
@@ -122,7 +123,7 @@ function buildDeviceCapabilitiesSection(context: AgentContext): string {
 
   return `## Device Capabilities
 
-The user is wearing smart glasses with the following hardware:
+The user is wearing **${context.glassesType} glasses** with the following hardware:
 
 **Available:**
 ${capabilities.map(c => `- ${c}`).join('\n')}
