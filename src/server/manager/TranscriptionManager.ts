@@ -41,6 +41,12 @@ export class TranscriptionManager {
   // Pre-captured photo (taken at wake word time, before query is ready)
   private pendingPhoto: Promise<StoredPhoto | null> | null = null;
 
+  // Duplicate detection: store first few words of last processed query
+  private lastProcessedWords: string[] = [];
+  private lastProcessedTime: number = 0;
+  private readonly DUPLICATE_WINDOW_MS = 10000;  // 10s window to detect duplicates
+  private readonly DUPLICATE_WORD_COUNT = 3;     // Compare first 3 words
+
   // Timers
   private silenceTimeout: NodeJS.Timeout | undefined;
   private maxListeningTimeout: NodeJS.Timeout | undefined;
@@ -99,6 +105,12 @@ export class TranscriptionManager {
       // Not listening - look for wake word
       if (!wakeResult.detected) {
         return;  // No wake word, ignore
+      }
+
+      // Check for duplicate query (delayed transcript from already-processed utterance)
+      if (this.isDuplicateQuery(wakeResult.query)) {
+        console.log(`⏱️ [WAKE] Ignoring duplicate wake word: "${text}" (isFinal=${isFinal ?? false})`);
+        return;
       }
 
       // Wake word detected! Start listening
@@ -177,6 +189,10 @@ export class TranscriptionManager {
     this.isProcessing = true;
     this.clearTimers();
 
+    // Store first few words for duplicate detection (lowercase, stripped of punctuation)
+    this.lastProcessedWords = this.extractWords(query);
+    this.lastProcessedTime = Date.now();
+
     const silenceDetectedAt = Date.now();
     const timeSinceWake = silenceDetectedAt - this.transcriptionStartTime;
     console.log(`⏱️ [SILENCE] Query ready: "${query}" (${timeSinceWake}ms since wake word)`);
@@ -230,6 +246,51 @@ export class TranscriptionManager {
       clearTimeout(this.maxListeningTimeout);
       this.maxListeningTimeout = undefined;
     }
+  }
+
+  /**
+   * Extract first N words from a query (lowercase, punctuation stripped)
+   */
+  private extractWords(query: string): string[] {
+    return query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '')  // Remove punctuation
+      .split(/\s+/)
+      .filter(w => w.length > 0)
+      .slice(0, this.DUPLICATE_WORD_COUNT);
+  }
+
+  /**
+   * Check if a query is a duplicate of the last processed query
+   */
+  private isDuplicateQuery(query: string): boolean {
+    // No previous query to compare
+    if (this.lastProcessedWords.length === 0) {
+      return false;
+    }
+
+    // Outside the duplicate detection window
+    if (Date.now() - this.lastProcessedTime > this.DUPLICATE_WINDOW_MS) {
+      return false;
+    }
+
+    // Extract words from incoming query
+    const incomingWords = this.extractWords(query);
+
+    // If incoming query is too short, compare what we have
+    if (incomingWords.length === 0) {
+      return false;
+    }
+
+    // Compare words - all incoming words must match the start of last processed
+    const wordsToCompare = Math.min(incomingWords.length, this.lastProcessedWords.length);
+    for (let i = 0; i < wordsToCompare; i++) {
+      if (incomingWords[i] !== this.lastProcessedWords[i]) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**
