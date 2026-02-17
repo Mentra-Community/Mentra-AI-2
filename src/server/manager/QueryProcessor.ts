@@ -104,7 +104,7 @@ export class QueryProcessor {
       glassesType: hasDisplay ? 'display' : 'camera',
       location: this.user.location.getCachedContext(),
       localTime,
-      timezone: this.user.location.getCachedContext()?.timezone,
+      timezone: this.user.location.getTimezone() ?? undefined,
       notifications: this.user.notifications.formatForPrompt(),
       conversationHistory: this.user.chatHistory.getRecentTurns(),
     };
@@ -212,8 +212,8 @@ export class QueryProcessor {
    * Get local time string
    */
   private getLocalTime(): string {
-    // Use timezone from location context if available
-    const timezone = this.user.location.getCachedContext()?.timezone;
+    // Use timezone (available even before geocoding, set from SDK settings)
+    const timezone = this.user.location.getTimezone();
 
     try {
       const now = new Date();

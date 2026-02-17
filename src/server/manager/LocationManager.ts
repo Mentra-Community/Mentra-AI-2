@@ -64,6 +64,9 @@ export class LocationManager {
   private currentLat: number | null = null;
   private currentLng: number | null = null;
 
+  // Timezone stored independently (set from SDK before cachedContext exists)
+  private userTimezone: string | null = null;
+
   // Cached location context (per-session)
   private cachedContext: LocationContext | null = null;
   private lastGeocodedLat: number | null = null;
@@ -151,6 +154,13 @@ export class LocationManager {
    */
   getCachedContext(): LocationContext | null {
     return this.cachedContext;
+  }
+
+  /**
+   * Get the user's timezone (available even before location context is built)
+   */
+  getTimezone(): string | null {
+    return this.cachedContext?.timezone ?? this.userTimezone;
   }
 
   /**
@@ -358,6 +368,7 @@ export class LocationManager {
    * Set timezone (called from SDK settings)
    */
   setTimezone(timezone: string): void {
+    this.userTimezone = timezone;
     if (this.cachedContext) {
       this.cachedContext.timezone = timezone;
     }
