@@ -36,7 +36,7 @@ export class MentraAI extends AppServer {
     sessionId: string,
     userId: string,
   ): Promise<void> {
-    console.log(`🚀 Mentra AI session started for ${userId}`);
+    console.log(`🚀 Mentra AI session started for ${userId} | model: ${session.capabilities?.modelName ?? 'unknown (capabilities not yet loaded)'} | hasCamera: ${session.capabilities?.hasCamera} | hasDisplay: ${session.capabilities?.hasDisplay} | hasSpeaker: ${session.capabilities?.hasSpeaker}`);
 
     // Get or create user
     const user = sessions.getOrCreate(userId);

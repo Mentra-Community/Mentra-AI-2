@@ -35,17 +35,23 @@ export class QueryProcessor {
     const pipelineStart = Date.now();
     const lap = (label: string) => console.log(`⏱️ [${label}] +${Date.now() - pipelineStart}ms`);
 
-    console.log(`⏱️ [PIPELINE-START] Query: "${query.slice(0, 60)}..." | prePhoto: ${prePhoto ? 'yes' : 'no'}`);
+    // Determine glasses type from hasDisplay — the single source of truth.
+    // hasDisplay=true → display glasses (no camera, no speakers)
+    // hasDisplay=false → camera glasses (has camera, has speakers)
+    const hasDisplay = session.capabilities?.hasDisplay ?? false;
+    const hasCamera = !hasDisplay;
+    const hasSpeakers = !hasDisplay;
+
+    console.log(`⏱️ [PIPELINE-START] Query: "${query.slice(0, 60)}..." | prePhoto: ${prePhoto ? 'yes' : 'no'} | glasses: ${hasDisplay ? 'display' : 'camera'}`);
 
     // Start looping processing sound (fire and forget - don't block pipeline)
-    this.startProcessingSound();
-    this.showStatus("Processing...");
+    this.startProcessingSound(hasDisplay);
+    this.showStatus("Processing...", hasDisplay);
     lap('PROCESSING-SOUND');
 
     // Step 1: Use pre-captured photo (taken at wake word time), or capture now as fallback
     let photos: Buffer[] = [];
     let photoDataUrl: string | undefined;
-    const hasCamera = session.capabilities?.hasCamera ?? false;
 
     if (hasCamera) {
       if (prePhoto) {
@@ -95,11 +101,10 @@ export class QueryProcessor {
     // Step 3: Get local time
     const localTime = this.getLocalTime();
 
-    // Step 4: Build agent context
-    const hasDisplay = session.capabilities?.hasDisplay ?? false;
+    // Step 4: Build agent context (using snapshotted capabilities from pipeline start)
     const context: GenerateOptions["context"] = {
       hasDisplay,
-      hasSpeakers: session.capabilities?.hasSpeaker ?? true,
+      hasSpeakers,
       hasCamera,
       glassesType: hasDisplay ? 'display' : 'camera',
       location: this.user.location.getCachedContext(),
@@ -111,7 +116,7 @@ export class QueryProcessor {
     lap('BUILD-CONTEXT');
 
     // Step 5: Generate response
-    this.showStatus("Thinking...");
+    this.showStatus("Thinking...", hasDisplay);
     let response: string;
     try {
       const result = await generateResponse({
@@ -120,7 +125,7 @@ export class QueryProcessor {
         context,
         onToolCall: (toolName) => {
           if (toolName === 'search') {
-            this.showStatus("Searching...");
+            this.showStatus("Searching...", hasDisplay);
           }
         },
       });
@@ -170,19 +175,21 @@ export class QueryProcessor {
   /**
    * Show a status message on the HUD (display glasses only)
    */
-  private showStatus(text: string): void {
+  private showStatus(text: string, hasDisplay?: boolean): void {
     const session = this.user.appSession;
-    if (!session?.capabilities?.hasDisplay) return;
+    const isDisplay = hasDisplay ?? session?.capabilities?.hasDisplay ?? false;
+    if (!session || !isDisplay) return;
     session.layouts.showTextWall(text, { durationMs: 10000 });
   }
 
   /**
    * Start looping the processing sound until stopProcessingSound() is called
    */
-  private startProcessingSound(): void {
+  private startProcessingSound(hasDisplay?: boolean): void {
     if (!PROCESSING_SOUND_URL || !this.user.appSession) return;
     // Don't play sound on display glasses — they have no speakers and get visual status instead
-    if (this.user.appSession.capabilities?.hasDisplay) return;
+    const isDisplay = hasDisplay ?? this.user.appSession.capabilities?.hasDisplay ?? false;
+    if (isDisplay) return;
 
     this.processingSoundLooping = true;
     this.loopProcessingSound();
