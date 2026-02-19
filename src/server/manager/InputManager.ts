@@ -43,7 +43,7 @@ export class InputManager {
       }
 
       // Quick press — take a photo
-      await this.user.photo.takePhoto();
+      // await this.user.photo.takePhoto();
     });
   }
 
@@ -51,7 +51,7 @@ export class InputManager {
   private setupTouch(session: AppSession): void {
     session.events.onTouchEvent("single_tap", async () => {
       console.log(`[Touch] ${this.user.userId}: single_tap`);
-      await this.user.photo.takePhoto();
+      // await this.user.photo.takePhoto();
     });
 
     session.events.onTouchEvent("double_tap", () => {
