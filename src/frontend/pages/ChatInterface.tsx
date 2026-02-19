@@ -192,7 +192,7 @@ function ChatInterface({ userId, recipientId, onEnableDebugMode }: ChatInterface
 
   useEffect(() => {
     if (currentPage === 'chat' && messages.length > 0) {
-      scrollToBottom();
+      scrollToBottom(true);
     }
   }, [currentPage]);
 
@@ -444,11 +444,8 @@ function ChatInterface({ userId, recipientId, onEnableDebugMode }: ChatInterface
                     className="w-[150px] h-[150px] mb-[10px]"
                   />
                   <h1 className="text-[20px] font-semibold" style={{ color: 'var(--secondary-foreground)' }}>
-                    Connect your glasses
+                    Waiting for connection...
                   </h1>
-                  <p className="text-[14px] text-[#A3A3A3] mt-[8px]">
-                    Open Mentra AI on your glasses to start chatting.
-                  </p>
                 </div>
               </motion.div>
             )}

@@ -138,7 +138,7 @@ function Settings({
         {/* Theme Setting */}
         <SettingItem
           isFirstItem={true}
-          isLastItem={false}
+          isLastItem={true}
           settingItemName={settingItems.darkMode.settingName}
           description={settingItems.darkMode.description}
           customContent={
@@ -146,7 +146,7 @@ function Settings({
           }
         />
 
-        {/* Chat History Setting */}
+        {/* Chat History Setting — disabled until persistence is implemented
         <SettingItem
           isFirstItem={false}
           isLastItem={true}
@@ -160,6 +160,7 @@ function Settings({
             />
           }
         />
+        */}
 
         {/* Version Info */}
         <div className="pt-8 text-center">
