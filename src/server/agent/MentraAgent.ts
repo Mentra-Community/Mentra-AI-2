@@ -56,7 +56,7 @@ export function createMentraAgent(context: AgentContext): Agent {
   return new Agent({
     id: "mentra-ai",
     name: "Mentra AI",
-    model: "google/gemini-2.5-flash",
+    model: "google/gemini-3-pro-preview",
     instructions: buildSystemPrompt(context),
     tools: {
       search: searchTool,

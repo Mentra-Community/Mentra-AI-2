@@ -66,5 +66,5 @@ export const AGENT_SETTINGS = {
   // Maximum tool call iterations
   maxSteps: 5,
   // Model identifier (Mastra format)
-  model: 'google/gemini-2.5-flash',
+  model: 'google/gemini-3-pro-preview',
 };
