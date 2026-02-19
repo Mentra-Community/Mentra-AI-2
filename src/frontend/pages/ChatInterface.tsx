@@ -27,6 +27,7 @@ interface Message {
 interface ChatInterfaceProps {
   userId: string;
   recipientId: string;
+  onEnableDebugMode?: () => void;
 }
 
 const THINKING_WORDS = [
@@ -143,7 +144,7 @@ const ChatBubble = memo(function ChatBubble({
 /**
  * ChatInterface component - Beautiful dark-themed chat UI
  */
-function ChatInterface({ userId, recipientId }: ChatInterfaceProps) {
+function ChatInterface({ userId, recipientId, onEnableDebugMode }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasConnectedBefore] = useState(() => {
     return sessionStorage.getItem('mentra-session-connected') === 'true';
@@ -343,6 +344,7 @@ function ChatInterface({ userId, recipientId }: ChatInterfaceProps) {
         onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
         userId={userId}
         onChatHistoryToggle={(enabled) => setChatHistoryEnabled(enabled)}
+        onEnableDebugMode={onEnableDebugMode}
       />
     );
   }

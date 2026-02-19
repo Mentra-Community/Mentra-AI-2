@@ -8,8 +8,8 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { buildSystemPrompt, type AgentContext } from "../../../agent/prompt";
-import { ResponseMode } from "../../../constants/config";
+import { buildSystemPrompt, type AgentContext } from "../../../../agent/prompt";
+import { ResponseMode } from "../../../../constants/config";
 
 function makeContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {

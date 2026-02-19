@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { useMentraAuth } from '@mentra/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ChatInterface from './pages/ChatInterface';
+import { DebugOverlay } from './components/DebugOverlay';
 
 // Theme Context
 interface ThemeContextValue {
@@ -70,6 +72,32 @@ export default function App() {
     }
   }, [theme, isAuthenticated, userId]);
 
+  // Debug mode state with localStorage persistence
+  const [debugMode, setDebugMode] = useState(() => {
+    return localStorage.getItem('mentra-debug-mode') === 'true';
+  });
+  const [debugToast, setDebugToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showDebugToast = useCallback((message: string) => {
+    setDebugToast(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setDebugToast(null), 2000);
+  }, []);
+
+  const enableDebugMode = useCallback(() => {
+    if (debugMode) return;
+    localStorage.setItem('mentra-debug-mode', 'true');
+    setDebugMode(true);
+    showDebugToast('Debug mode enabled');
+  }, [debugMode, showDebugToast]);
+
+  const disableDebugMode = useCallback(() => {
+    localStorage.removeItem('mentra-debug-mode');
+    setDebugMode(false);
+    showDebugToast('Debug mode disabled');
+  }, [showDebugToast]);
+
   // Keyboard shortcut: Cmd+Shift+D to toggle theme
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -112,7 +140,30 @@ export default function App() {
   return (
     <ThemeContext.Provider value={{ theme, isDarkMode: theme === 'dark', toggleTheme }}>
       <div className="font-sans bg-background text-foreground min-h-screen">
-        <ChatInterface userId={userId || ''} recipientId="mentra-ai" />
+        <ChatInterface userId={userId || ''} recipientId="mentra-ai" onEnableDebugMode={enableDebugMode} />
+
+        {/* Debug overlay — rendered outside ChatInterface so it appears on all pages */}
+        {debugMode && userId && (
+          <DebugOverlay userId={userId} onClose={disableDebugMode} />
+        )}
+
+        {/* Debug toast */}
+        <AnimatePresence>
+          {debugToast && (
+            <motion.div
+              key="debug-toast"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="fixed bottom-[160px] left-0 right-0 z-[70] flex justify-center pointer-events-none"
+            >
+              <span className="px-4 py-2 rounded-full bg-black/80 text-white text-xs font-medium backdrop-blur-md">
+                {debugToast}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </ThemeContext.Provider>
   );

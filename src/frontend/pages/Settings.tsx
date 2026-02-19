@@ -12,6 +12,7 @@ interface SettingsProps {
   onToggleDarkMode: () => void;
   userId: string;
   onChatHistoryToggle?: (enabled: boolean) => void;
+  onEnableDebugMode?: () => void;
 }
 
 interface SettingItemInfo {
@@ -39,10 +40,25 @@ function Settings({
   onToggleDarkMode,
   userId,
   onChatHistoryToggle,
+  onEnableDebugMode,
 }: SettingsProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [chatHistoryEnabled, setChatHistoryEnabled] = useState(false);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+
+  // Hidden 10-tap debug mode activation
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSettingsTap = () => {
+    tapCountRef.current++;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 3000);
+    if (tapCountRef.current >= 10) {
+      tapCountRef.current = 0;
+      onEnableDebugMode?.();
+    }
+  };
 
   // Fetch user settings on mount
   useEffect(() => {
@@ -90,6 +106,7 @@ function Settings({
 
   return (
     <div
+      onClick={handleSettingsTap}
       className={`h-screen flex flex-col ${isDarkMode ? 'dark' : ''}`}
       style={{
         backgroundColor: 'var(--background)',

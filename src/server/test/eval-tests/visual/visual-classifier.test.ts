@@ -12,7 +12,7 @@
  */
 
 import { describe, test, afterAll } from "bun:test";
-import { isVisualQuery } from "../../agent/visual-classifier";
+import { isVisualQuery } from "../../../agent/visual-classifier";
 import easyCases from "./fixtures/visual-classifier-easy.json";
 import mediumCases from "./fixtures/visual-classifier-medium.json";
 import hardCases from "./fixtures/visual-classifier-hard.json";
