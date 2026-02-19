@@ -165,6 +165,7 @@ function ChatInterface({ userId, recipientId }: ChatInterfaceProps) {
   });
   const [chatHistoryEnabled, setChatHistoryEnabled] = useState(false);
   const [sessionActive, setSessionActive] = useState<boolean | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [currentPage, setCurrentPage] = useState<'chat' | 'settings'>('chat');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -217,95 +218,119 @@ function ChatInterface({ userId, recipientId }: ChatInterfaceProps) {
     }
   }, [userId]);
 
-  // Set up SSE connection for real-time updates
+  // Set up SSE connection for real-time updates (with auto-reconnect)
   useEffect(() => {
     if (!userId || !recipientId) {
       return;
     }
 
-    const sseUrl = `/api/chat/stream?userId=${encodeURIComponent(userId)}&recipientId=${encodeURIComponent(recipientId)}`;
-    const eventSource = new EventSource(sseUrl);
-    sseRef.current = eventSource;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_DELAY = 30000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    eventSource.onopen = () => {
-      sessionStorage.setItem('mentra-session-connected', 'true');
-    };
+    const connect = () => {
+      const sseUrl = `/api/chat/stream?userId=${encodeURIComponent(userId)}&recipientId=${encodeURIComponent(recipientId)}`;
+      const eventSource = new EventSource(sseUrl);
+      sseRef.current = eventSource;
 
-    eventSource.onmessage = (event) => {
-      if (!event.data || event.data.trim() === '') {
-        return;
-      }
+      eventSource.onopen = () => {
+        reconnectAttempts = 0;
+        setIsLoadingHistory(true);
+        sessionStorage.setItem('mentra-session-connected', 'true');
+      };
 
-      try {
-        const data = JSON.parse(event.data);
+      eventSource.onmessage = (event) => {
+        if (!event.data || event.data.trim() === '') {
+          return;
+        }
 
-        if (data.type === 'message') {
-          const isRelevant =
-            (data.senderId === userId && data.recipientId === recipientId) ||
-            (data.senderId === recipientId && data.recipientId === userId);
+        try {
+          const data = JSON.parse(event.data);
 
-          if (isRelevant) {
-            if (data.senderId === userId) {
-              const randomWord = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
-              setThinkingWord(randomWord);
-              setIsProcessing(true);
-            } else {
-              setIsProcessing(false);
+          if (data.type === 'message') {
+            const isRelevant =
+              (data.senderId === userId && data.recipientId === recipientId) ||
+              (data.senderId === recipientId && data.recipientId === userId);
+
+            if (isRelevant) {
+              if (data.senderId === userId) {
+                const randomWord = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
+                setThinkingWord(randomWord);
+                setIsProcessing(true);
+              } else {
+                setIsProcessing(false);
+              }
+
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: data.id || Date.now().toString(),
+                  senderId: data.senderId,
+                  recipientId: data.recipientId,
+                  content: data.content,
+                  timestamp: new Date(data.timestamp),
+                  image: data.image,
+                },
+              ]);
             }
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: data.id || Date.now().toString(),
-                senderId: data.senderId,
-                recipientId: data.recipientId,
-                content: data.content,
-                timestamp: new Date(data.timestamp),
-                image: data.image,
-              },
-            ]);
-          }
-        } else if (data.type === 'processing') {
-          const randomWord = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
-          setThinkingWord(randomWord);
-          setIsProcessing(true);
-        } else if (data.type === 'idle') {
-          setIsProcessing(false);
-        } else if (data.type === 'history') {
-          // Instant scroll for history load — no animation
-          scrollInstantRef.current = true;
-          setMessages(
-            data.messages.map((msg: any) => ({
+          } else if (data.type === 'processing') {
+            const randomWord = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
+            setThinkingWord(randomWord);
+            setIsProcessing(true);
+          } else if (data.type === 'idle') {
+            setIsProcessing(false);
+          } else if (data.type === 'connected') {
+            // SSE connected — waiting for history
+            setIsLoadingHistory(true);
+          } else if (data.type === 'history') {
+            // Instant scroll, no animation — mark all IDs as already rendered
+            scrollInstantRef.current = true;
+            const historyMessages = data.messages.map((msg: any) => ({
               id: msg.id,
               senderId: msg.senderId,
               recipientId: msg.recipientId,
               content: msg.content,
               timestamp: new Date(msg.timestamp),
               image: msg.image,
-            }))
-          );
-        } else if (data.type === 'session_started') {
-          setSessionActive(true);
-        } else if (data.type === 'session_ended') {
-          setSessionActive(false);
-          setIsProcessing(false);
-        } else if (data.type === 'session_heartbeat') {
-          setSessionActive(data.active);
-          if (!data.active) {
+            }));
+            for (const msg of historyMessages) {
+              renderedIdsRef.current.add(msg.id);
+            }
+            setMessages(historyMessages);
+            setIsLoadingHistory(false);
+          } else if (data.type === 'session_started') {
+            setSessionActive(true);
+          } else if (data.type === 'session_ended') {
+            setSessionActive(false);
             setIsProcessing(false);
+            setMessages([]);
+            renderedIdsRef.current.clear();
+          } else if (data.type === 'session_heartbeat') {
+            setSessionActive(data.active);
+            setIsLoadingHistory(false);
+            if (!data.active) {
+              setIsProcessing(false);
+            }
           }
+        } catch (error) {
+          console.error('[ChatInterface] Error parsing SSE message:', error);
         }
-      } catch (error) {
-        console.error('[ChatInterface] Error parsing SSE message:', error);
-      }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        const delay = Math.min(1000 * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY);
+        reconnectAttempts++;
+        console.log(`[ChatInterface] SSE disconnected, reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+        reconnectTimer = setTimeout(connect, delay);
+      };
     };
 
-    eventSource.onerror = (error) => {
-      console.error('[ChatInterface] SSE error:', error);
-    };
+    connect();
 
     return () => {
-      eventSource.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      sseRef.current?.close();
     };
   }, [userId, recipientId]);
 
@@ -378,9 +403,52 @@ function ChatInterface({ userId, recipientId }: ChatInterfaceProps) {
             <MiraBackgroundAnimation />
           </div>
 
-          {/* Welcome Screen */}
+          {/* Empty States: Welcome / Disconnected / Loading */}
           <AnimatePresence mode="wait">
-            {messages.length === 0 && !hasConnectedBefore && (
+            {isLoadingHistory && messages.length === 0 && (
+              <motion.div
+                key="loading-screen"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 flex flex-col items-center justify-center px-6 z-10"
+              >
+                <div className="flex flex-col items-center gap-3 -mt-[80px]">
+                  <svg className="w-6 h-6 text-[#A3A3A3] animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" />
+                  </svg>
+                  <span className="text-[14px] text-[#A3A3A3] font-medium">Loading conversation...</span>
+                </div>
+              </motion.div>
+            )}
+            {!isLoadingHistory && messages.length === 0 && sessionActive === false && (
+              <motion.div
+                key="disconnected-screen"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="absolute inset-0 flex flex-col items-center justify-center px-6 z-10"
+              >
+                <div className="flex flex-col items-center -mt-[80px]">
+                  <Lottie
+                    animationData={MentraLogoAnimation}
+                    loop={true}
+                    autoplay={true}
+                    className="w-[150px] h-[150px] mb-[10px]"
+                  />
+                  <h1 className="text-[20px] font-semibold" style={{ color: 'var(--secondary-foreground)' }}>
+                    Connect your glasses
+                  </h1>
+                  <p className="text-[14px] text-[#A3A3A3] mt-[8px]">
+                    Open Mentra AI on your glasses to start chatting.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+            {!isLoadingHistory && messages.length === 0 && sessionActive !== false && !hasConnectedBefore && (
               <motion.div
                 key="welcome-screen"
                 initial={{ opacity: 0 }}

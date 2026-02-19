@@ -123,6 +123,15 @@ export async function chatStream(c: Context) {
       }
     }
 
+    // Send immediate session status so frontend doesn't wait up to 15s
+    const currentUser = sessions.get(userId);
+    const isCurrentlyActive = currentUser != null && currentUser.appSession != null;
+    await stream.write(`data: ${JSON.stringify({
+      type: "session_heartbeat",
+      active: isCurrentlyActive,
+      timestamp: new Date().toISOString(),
+    })}\n\n`);
+
     // Session heartbeat — periodic status ping with active/inactive state
     const heartbeatInterval = setInterval(async () => {
       try {

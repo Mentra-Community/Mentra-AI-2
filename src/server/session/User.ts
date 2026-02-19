@@ -83,6 +83,10 @@ export class User {
 
   /** Wire up a glasses connection — sets up all event listeners */
   setAppSession(session: AppSession): void {
+    // Clean up old session if exists (reconnect without clean onStop)
+    if (this.appSession) {
+      this.clearAppSession();
+    }
     this.appSession = session;
     this.transcription.setup(session);
     this.input.setup(session);
