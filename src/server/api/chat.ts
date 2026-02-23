@@ -110,46 +110,42 @@ export async function chatStream(c: Context) {
     // Send connected event
     await stream.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
-    // Flush any events that were broadcast before this client connected
+    // Always send chat history first so the frontend has full conversation context
+    const user = sessions.get(userId);
+    if (user) {
+      const recentTurns = user.chatHistory.getRecentTurns(30);
+      if (recentTurns.length > 0) {
+        const messages = recentTurns.flatMap((turn, index) => [
+          {
+            id: `${Date.now()}-${index * 2}`,
+            senderId: userId,
+            recipientId: recipientId || "mentra-ai",
+            content: turn.query,
+            timestamp: turn.timestamp.toISOString(),
+            image: turn.photoDataUrl,
+          },
+          {
+            id: `${Date.now()}-${index * 2 + 1}`,
+            senderId: recipientId || "mentra-ai",
+            recipientId: userId,
+            content: turn.response,
+            timestamp: turn.timestamp.toISOString(),
+          },
+        ]);
+
+        await stream.write(
+          `data: ${JSON.stringify({ type: "history", messages })}\n\n`
+        );
+      }
+    }
+
+    // Then flush any events that were broadcast before this client connected
     const queued = pendingEvents.get(userId);
-    let flushedQueue = false;
     if (queued && queued.length > 0) {
       for (const event of queued) {
         await stream.write(`data: ${event}\n\n`);
       }
       pendingEvents.delete(userId);
-      flushedQueue = true;
-    }
-
-    // Only send history if we didn't flush queued events (avoids duplicates)
-    if (!flushedQueue) {
-      const user = sessions.get(userId);
-      if (user) {
-        const recentTurns = user.chatHistory.getRecentTurns(30);
-        if (recentTurns.length > 0) {
-          const messages = recentTurns.flatMap((turn, index) => [
-            {
-              id: `${Date.now()}-${index * 2}`,
-              senderId: userId,
-              recipientId: recipientId || "mentra-ai",
-              content: turn.query,
-              timestamp: turn.timestamp.toISOString(),
-              image: turn.photoDataUrl,
-            },
-            {
-              id: `${Date.now()}-${index * 2 + 1}`,
-              senderId: recipientId || "mentra-ai",
-              recipientId: userId,
-              content: turn.response,
-              timestamp: turn.timestamp.toISOString(),
-            },
-          ]);
-
-          await stream.write(
-            `data: ${JSON.stringify({ type: "history", messages })}\n\n`
-          );
-        }
-      }
     }
 
     // Send immediate session status so frontend doesn't wait up to 15s

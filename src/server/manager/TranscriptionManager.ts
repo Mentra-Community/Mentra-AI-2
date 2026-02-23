@@ -57,7 +57,7 @@ export class TranscriptionManager {
   private maxListeningTimeout: NodeJS.Timeout | undefined;
 
   // Config
-  private readonly SILENCE_TIMEOUT_MS = 2500;  // 4s silence = query complete (gives user time to add to query)
+  private readonly SILENCE_TIMEOUT_MS = 3000;  // 4s silence = query complete (gives user time to add to query)
   private readonly MAX_LISTENING_MS = 15000;   // 15s max listening time
 
   // Callback for when query is ready
