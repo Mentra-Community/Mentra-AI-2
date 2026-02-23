@@ -4,7 +4,7 @@
 
 import type { Context } from "hono";
 import { sessions } from "../manager/SessionManager";
-import { broadcastChatEvent } from "./chat";
+import { broadcastChatEvent, clearPendingEvents } from "./chat";
 
 /**
  * POST /api/debug/kill-session?userId=<id>
@@ -25,6 +25,7 @@ export async function killSession(c: Context) {
     timestamp: new Date().toISOString(),
   });
 
+  clearPendingEvents(userId);
   sessions.remove(userId);
 
   return c.json({

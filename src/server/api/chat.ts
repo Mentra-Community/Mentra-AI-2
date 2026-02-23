@@ -17,6 +17,10 @@ interface SSEWriter {
 // SSE clients for chat updates per user
 const chatClients = new Map<string, Set<SSEWriter>>();
 
+// Queued events for users with no connected SSE clients (fixes first-query race condition)
+// Cleared when the user session ends (onStop)
+const pendingEvents = new Map<string, Array<string>>();
+
 /**
  * Add a chat SSE client for a user
  */
@@ -46,6 +50,13 @@ function removeChatClient(userId: string, writerId: string) {
 }
 
 /**
+ * Clear queued events for a user (called on session end)
+ */
+export function clearPendingEvents(userId: string) {
+  pendingEvents.delete(userId);
+}
+
+/**
  * Broadcast a chat event to all clients for a user
  */
 export function broadcastChatEvent(userId: string, event: {
@@ -53,9 +64,14 @@ export function broadcastChatEvent(userId: string, event: {
   [key: string]: unknown;
 }) {
   const clients = chatClients.get(userId);
-  if (!clients) return;
-
   const data = JSON.stringify(event);
+
+  if (!clients || clients.size === 0) {
+    // No SSE clients connected — queue for later
+    if (!pendingEvents.has(userId)) pendingEvents.set(userId, []);
+    pendingEvents.get(userId)!.push(data);
+    return;
+  }
 
   for (const writer of clients) {
     try {
@@ -94,32 +110,45 @@ export async function chatStream(c: Context) {
     // Send connected event
     await stream.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
 
-    // Get recent chat history if available
-    const user = sessions.get(userId);
-    if (user) {
-      const recentTurns = user.chatHistory.getRecentTurns(30);
-      if (recentTurns.length > 0) {
-        const messages = recentTurns.flatMap((turn, index) => [
-          {
-            id: `${Date.now()}-${index * 2}`,
-            senderId: userId,
-            recipientId: recipientId || "mentra-ai",
-            content: turn.query,
-            timestamp: turn.timestamp.toISOString(),
-            image: turn.photoDataUrl,
-          },
-          {
-            id: `${Date.now()}-${index * 2 + 1}`,
-            senderId: recipientId || "mentra-ai",
-            recipientId: userId,
-            content: turn.response,
-            timestamp: turn.timestamp.toISOString(),
-          },
-        ]);
+    // Flush any events that were broadcast before this client connected
+    const queued = pendingEvents.get(userId);
+    let flushedQueue = false;
+    if (queued && queued.length > 0) {
+      for (const event of queued) {
+        await stream.write(`data: ${event}\n\n`);
+      }
+      pendingEvents.delete(userId);
+      flushedQueue = true;
+    }
 
-        await stream.write(
-          `data: ${JSON.stringify({ type: "history", messages })}\n\n`
-        );
+    // Only send history if we didn't flush queued events (avoids duplicates)
+    if (!flushedQueue) {
+      const user = sessions.get(userId);
+      if (user) {
+        const recentTurns = user.chatHistory.getRecentTurns(30);
+        if (recentTurns.length > 0) {
+          const messages = recentTurns.flatMap((turn, index) => [
+            {
+              id: `${Date.now()}-${index * 2}`,
+              senderId: userId,
+              recipientId: recipientId || "mentra-ai",
+              content: turn.query,
+              timestamp: turn.timestamp.toISOString(),
+              image: turn.photoDataUrl,
+            },
+            {
+              id: `${Date.now()}-${index * 2 + 1}`,
+              senderId: recipientId || "mentra-ai",
+              recipientId: userId,
+              content: turn.response,
+              timestamp: turn.timestamp.toISOString(),
+            },
+          ]);
+
+          await stream.write(
+            `data: ${JSON.stringify({ type: "history", messages })}\n\n`
+          );
+        }
       }
     }
 

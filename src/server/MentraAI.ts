@@ -7,7 +7,7 @@
 
 import { AppServer, AppSession } from "@mentra/sdk";
 import { sessions } from "./manager/SessionManager";
-import { broadcastChatEvent } from "./api/chat";
+import { broadcastChatEvent, clearPendingEvents } from "./api/chat";
 import { connectDB } from "./db/connection";
 
 const WELCOME_SOUND_URL = process.env.WELCOME_SOUND_URL;
@@ -152,6 +152,7 @@ export class MentraAI extends AppServer {
     });
 
     try {
+      clearPendingEvents(userId);
       sessions.remove(userId);
       console.log(`🗑️ Cleaned up session for ${userId}`);
     } catch (err) {
