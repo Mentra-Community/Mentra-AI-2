@@ -34,8 +34,13 @@ export class TranscriptionManager {
   private isProcessing: boolean = false;
   private activeSpeakerId: string | undefined = undefined;
 
-  // Transcript accumulation
-  private currentTranscript: string = '';
+  // Transcript accumulation (utterance-aware)
+  // SDK sends cumulative text per-utterance, but starts fresh on new utterances.
+  // We track confirmed (finalized) and current (in-progress) portions separately
+  // so that multi-utterance queries within the silence window are combined.
+  private confirmedTranscript: string = '';
+  private currentUtteranceText: string = '';
+  private lastConfirmedUtteranceId: string | undefined = undefined;
   private transcriptionStartTime: number = 0;
 
   // Pre-captured photo (taken at wake word time, before query is ready)
@@ -52,7 +57,7 @@ export class TranscriptionManager {
   private maxListeningTimeout: NodeJS.Timeout | undefined;
 
   // Config
-  private readonly SILENCE_TIMEOUT_MS = 1500;  // 1.5s silence = query complete
+  private readonly SILENCE_TIMEOUT_MS = 2500;  // 4s silence = query complete (gives user time to add to query)
   private readonly MAX_LISTENING_MS = 15000;   // 15s max listening time
 
   // Callback for when query is ready
@@ -62,6 +67,13 @@ export class TranscriptionManager {
   private destroyed = false;
 
   constructor(private user: User) {}
+
+  /**
+   * Get the full accumulated transcript (confirmed + in-progress utterance)
+   */
+  private getFullTranscript(): string {
+    return (this.confirmedTranscript + ' ' + this.currentUtteranceText).trim();
+  }
 
   /**
    * Set the callback to be invoked when a query is ready
@@ -121,21 +133,32 @@ export class TranscriptionManager {
       this.startListening(speakerId);
     }
 
-    // We're listening - accumulate transcript
-    this.currentTranscript = removeWakeWord(text);
+    // We're listening - accumulate transcript across utterances
+    const cleanText = removeWakeWord(text);
+    const utteranceId = (data as TranscriptionData & { utteranceId?: string }).utteranceId;
+
+    if (isFinal) {
+      // Utterance complete — snapshot into confirmed transcript
+      if (utteranceId && utteranceId === this.lastConfirmedUtteranceId) {
+        // Duplicate isFinal for same utterance — ignore to avoid double-appending
+      } else {
+        this.confirmedTranscript = (this.confirmedTranscript + ' ' + cleanText).trim();
+        this.lastConfirmedUtteranceId = utteranceId;
+      }
+      this.currentUtteranceText = '';
+    } else {
+      // Interim update — overwrite in-progress portion (cumulative within same utterance)
+      this.currentUtteranceText = cleanText;
+    }
+
     this.resetSilenceTimeout();
 
     // Show live transcription on display glasses HUD
     if (this.isListening && this.user.appSession?.capabilities?.hasDisplay) {
       this.user.appSession.layouts.showTextWall(
-        `Listening...\n\n${this.currentTranscript}`,
+        `Listening...\n\n${this.getFullTranscript()}`,
         { durationMs: 5000 }
       );
-    }
-
-    // If final transcript, process after a short delay
-    if (isFinal) {
-      this.resetSilenceTimeout();  // Reset timer on final transcript
     }
   }
 
@@ -145,7 +168,9 @@ export class TranscriptionManager {
   private startListening(speakerId?: string): void {
     this.isListening = true;
     this.activeSpeakerId = speakerId;
-    this.currentTranscript = '';
+    this.confirmedTranscript = '';
+    this.currentUtteranceText = '';
+    this.lastConfirmedUtteranceId = undefined;
     this.transcriptionStartTime = Date.now();
 
     // Capture photo NOW while user is still speaking (parallel with transcript accumulation)
@@ -179,7 +204,7 @@ export class TranscriptionManager {
     }
 
     this.silenceTimeout = setTimeout(() => {
-      if (this.isListening && !this.isProcessing && this.currentTranscript.trim().length > 0) {
+      if (this.isListening && !this.isProcessing && this.getFullTranscript().length > 0) {
         this.processCurrentQuery();
       }
     }, this.SILENCE_TIMEOUT_MS);
@@ -191,7 +216,7 @@ export class TranscriptionManager {
   private async processCurrentQuery(): Promise<void> {
     if (this.isProcessing) return;
 
-    const query = this.currentTranscript.trim();
+    const query = this.getFullTranscript();
     if (!query) {
       this.resetState();
       return;
@@ -245,7 +270,9 @@ export class TranscriptionManager {
     this.isListening = false;
     this.isProcessing = false;
     this.activeSpeakerId = undefined;
-    this.currentTranscript = '';
+    this.confirmedTranscript = '';
+    this.currentUtteranceText = '';
+    this.lastConfirmedUtteranceId = undefined;
     this.transcriptionStartTime = 0;
     this.pendingPhoto = null;
     this.clearTimers();
