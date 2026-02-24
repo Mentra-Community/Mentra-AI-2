@@ -48,7 +48,12 @@ export function photoStream(c: Context) {
     });
 
     while (true) {
-      await stream.sleep(30000);
+      try {
+        await stream.writeSSE({ data: JSON.stringify({ type: "heartbeat" }) });
+      } catch {
+        break;
+      }
+      await stream.sleep(15000);
     }
   });
 }
@@ -84,7 +89,12 @@ export function transcriptionStream(c: Context) {
     });
 
     while (true) {
-      await stream.sleep(30000);
+      try {
+        await stream.writeSSE({ data: JSON.stringify({ type: "heartbeat" }) });
+      } catch {
+        break;
+      }
+      await stream.sleep(15000);
     }
   });
 }

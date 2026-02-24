@@ -44,6 +44,7 @@ export default function HomePage({ userId }: HomePageProps) {
   // Connect to SSE photo stream
   useEffect(() => {
     let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       try {
@@ -56,7 +57,7 @@ export default function HomePage({ userId }: HomePageProps) {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === "connected") return;
+            if (data.type === "connected" || data.type === "heartbeat") return;
 
             setPhotos((prev) => {
               if (prev.some((p) => p.requestId === data.requestId)) return prev;
@@ -79,20 +80,36 @@ export default function HomePage({ userId }: HomePageProps) {
         eventSource.onerror = () => {
           addLog("Photo stream disconnected, reconnecting...");
           eventSource?.close();
-          setTimeout(connect, 3000);
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connect, 3000);
         };
       } catch {
         addLog("Failed to connect to photo stream");
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     connect();
-    return () => eventSource?.close();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      eventSource?.close();
+    };
   }, [addLog, userId]);
 
   // Connect to SSE transcription stream
   useEffect(() => {
     let eventSource: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let idCounter = Date.now();
 
     const connect = () => {
@@ -106,7 +123,7 @@ export default function HomePage({ userId }: HomePageProps) {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === "connected") return;
+            if (data.type === "connected" || data.type === "heartbeat") return;
 
             setTranscriptions((prev) => {
               const entry = {
@@ -138,15 +155,30 @@ export default function HomePage({ userId }: HomePageProps) {
         eventSource.onerror = () => {
           addLog("Transcription stream disconnected, reconnecting...");
           eventSource?.close();
-          setTimeout(connect, 3000);
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(connect, 3000);
         };
       } catch {
         addLog("Failed to connect to transcription stream");
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     connect();
-    return () => eventSource?.close();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      eventSource?.close();
+    };
   }, [addLog, userId]);
 
   return (

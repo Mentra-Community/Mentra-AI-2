@@ -74,12 +74,9 @@ export function broadcastChatEvent(userId: string, event: {
   }
 
   for (const writer of clients) {
-    try {
-      writer.write(`data: ${data}\n\n`);
-    } catch {
-      // Client disconnected
+    writer.write(`data: ${data}\n\n`).catch(() => {
       clients.delete(writer);
-    }
+    });
   }
 }
 

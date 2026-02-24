@@ -329,9 +329,19 @@ function ChatInterface({ userId, recipientId, onEnableDebugMode }: ChatInterface
       };
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (!sseRef.current || sseRef.current.readyState === EventSource.CLOSED) {
+          connect();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     connect();
 
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       sseRef.current?.close();
     };
