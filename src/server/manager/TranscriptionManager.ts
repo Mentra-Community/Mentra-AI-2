@@ -1,7 +1,7 @@
 import type { AppSession, TranscriptionData } from "@mentra/sdk";
 import type { User } from "../session/User";
 import type { StoredPhoto } from "./PhotoManager";
-import { detectWakeWord, removeWakeWord } from "../utils/wake-word";
+import { detectWakeWord, removeWakeWord, stripWakeWordResidue } from "../utils/wake-word";
 
 interface SSEWriter {
   write: (data: string) => void;
@@ -72,7 +72,12 @@ export class TranscriptionManager {
    * Get the full accumulated transcript (confirmed + in-progress utterance)
    */
   private getFullTranscript(): string {
-    return (this.confirmedTranscript + ' ' + this.currentUtteranceText).trim();
+    const raw = (this.confirmedTranscript + ' ' + this.currentUtteranceText).trim();
+    // Safety net: first try to strip a full wake word (e.g. if "hey mentr a" accumulated),
+    // then strip leading residue fragments (e.g. "a," or "tra," left by Deepgram splitting
+    // "mentra" across utterance boundaries)
+    const cleaned = removeWakeWord(raw);
+    return stripWakeWordResidue(cleaned);
   }
 
   /**

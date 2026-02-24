@@ -5,11 +5,38 @@
  */
 
 /**
- * Wake words that trigger Mentra AI activation
+ * Wake words that trigger Mentra AI activation.
+ * Each entry is matched flexibly — optional whitespace between letters within
+ * a word, and required whitespace between words — so Deepgram variants like
+ * "hey mentr a" or "hey  mentra" still match.
  */
 export const WAKE_WORDS = [
   "hey mentra",
 ];
+
+/**
+ * Pre-built regex patterns for each wake word.
+ * Allows optional whitespace between consecutive letters within the same word
+ * so that Deepgram transcription variants like "hey mentr a" still match.
+ */
+const WAKE_PATTERNS: RegExp[] = WAKE_WORDS.map((ww) => {
+  let pattern = '';
+  for (let i = 0; i < ww.length; i++) {
+    const ch = ww[i];
+    if (ch === ' ') {
+      // Word boundary — require one or more whitespace
+      pattern += '\\s+';
+    } else {
+      pattern += ch;
+      // Between consecutive letters in the same word, allow optional whitespace
+      const next = ww[i + 1];
+      if (next && next !== ' ') {
+        pattern += '\\s*';
+      }
+    }
+  }
+  return new RegExp(pattern, 'i');
+});
 
 /**
  * Vision keywords that indicate a query requires camera/image analysis
@@ -85,17 +112,17 @@ export interface WakeWordResult {
 export function detectWakeWord(text: string): WakeWordResult {
   const lowerText = text.toLowerCase().trim();
 
-  for (const wakeWord of WAKE_WORDS) {
-    const index = lowerText.indexOf(wakeWord);
-    if (index !== -1) {
-      // Extract everything after the wake word, stripping leading punctuation
-      let query = text.slice(index + wakeWord.length).trim();
+  for (let i = 0; i < WAKE_PATTERNS.length; i++) {
+    const match = lowerText.match(WAKE_PATTERNS[i]);
+    if (match && match.index !== undefined) {
+      // Extract everything after the matched wake word, stripping leading punctuation
+      let query = text.slice(match.index + match[0].length).trim();
       // Remove leading punctuation (comma, period, etc.)
       query = query.replace(/^[,.\s]+/, '').trim();
       return {
         detected: true,
         query,
-        wakeWordUsed: wakeWord,
+        wakeWordUsed: WAKE_WORDS[i],
       };
     }
   }
@@ -107,6 +134,36 @@ export function detectWakeWord(text: string): WakeWordResult {
 }
 
 /**
+ * Trailing fragments of wake words that Deepgram may split into a separate
+ * utterance. For "hey mentra", Deepgram might send "hey mentr" in one
+ * utterance and "a, what time is it?" in the next — leaving "a," as residue.
+ *
+ * We generate all suffixes of the last word ("mentra") that are 1-5 chars,
+ * so: "a", "ra", "tra", "ntra", "entra". These are stripped (with optional
+ * trailing punctuation) from the START of text when it immediately follows
+ * a wake word detection.
+ */
+const WAKE_WORD_TRAILING_FRAGMENTS: RegExp = (() => {
+  const suffixes: string[] = [];
+  for (const ww of WAKE_WORDS) {
+    // Get the last word (e.g. "mentra" from "hey mentra")
+    const lastWord = ww.split(' ').pop() || '';
+    // Generate suffixes of length 1 to lastWord.length - 1
+    // (full word is handled by detectWakeWord itself)
+    for (let len = 1; len < lastWord.length; len++) {
+      suffixes.push(lastWord.slice(-len));
+    }
+  }
+  // Match any of these suffixes at the start of text, but ONLY if followed by
+  // punctuation (comma, period, etc.) — this prevents stripping real words like
+  // "a dog" or "are you there". The pattern requires at least one punctuation
+  // char after the fragment before any remaining text.
+  // e.g. matches "a," or "ra, " or "ntra." but NOT "a dog" or "are"
+  const escaped = suffixes.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  return new RegExp(`^(?:${escaped.join('|')})[,.!?;:]+\\s*`, 'i');
+})();
+
+/**
  * Remove wake word from text (if present)
  * @param text - The transcription text
  * @returns Text with wake word removed
@@ -114,6 +171,16 @@ export function detectWakeWord(text: string): WakeWordResult {
 export function removeWakeWord(text: string): string {
   const result = detectWakeWord(text);
   return result.query;
+}
+
+/**
+ * Strip leading wake word fragment residue from text.
+ * Call this on text that arrives AFTER a wake word was already detected in a
+ * previous utterance — Deepgram may have split "mentra" across utterance
+ * boundaries, leaving "a," or "tra," at the start of the next utterance.
+ */
+export function stripWakeWordResidue(text: string): string {
+  return text.replace(WAKE_WORD_TRAILING_FRAGMENTS, '').trim();
 }
 
 /**
