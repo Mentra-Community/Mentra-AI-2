@@ -22,14 +22,7 @@ export function useTheme() {
 }
 
 export default function App() {
-  const auth = useMentraAuth();
-
-  // DEBUG: ?debugUserId=email in URL bypasses auth for browser testing. REMOVE AFTER DEBUGGING.
-  const debugUserId = new URLSearchParams(window.location.search).get('debugUserId');
-  const userId = debugUserId || auth.userId;
-  const isLoading = debugUserId ? false : auth.isLoading;
-  const error = debugUserId ? null : auth.error;
-  const isAuthenticated = debugUserId ? true : auth.isAuthenticated;
+  const { userId, isLoading, error, isAuthenticated } = useMentraAuth();
 
   // Theme state with localStorage persistence
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
