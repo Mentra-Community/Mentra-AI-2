@@ -232,9 +232,9 @@ function buildContextSection(context: AgentContext): string {
     sections.push(`**Location Note:** When the user asks where they are, describe the location using the neighborhood, street name, and nearby landmarks or cross streets - but do NOT read out the exact street number (GPS addresses can be off by a few numbers). Use the full address internally for finding nearby places, directions, and mapping.`);
   }
 
-  // Time
+  // Date & Time
   if (context.localTime) {
-    sections.push(`**Local Time:** ${context.localTime}${context.timezone ? ` (${context.timezone})` : ''}`);
+    sections.push(`**Current Date & Time:** ${context.localTime}${context.timezone ? ` (${context.timezone})` : ''}\n**Time/Date Response Rule:** When asked "what time is it?" respond with JUST the time (e.g. "It's 6:38 PM"). When asked "what's the date?" respond with JUST the date (e.g. "It's February 23rd, 2026"). Only include extra details (timezone, day of week, full date+time) if specifically asked.`);
   }
 
   // Notifications

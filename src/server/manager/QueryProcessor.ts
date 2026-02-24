@@ -240,6 +240,10 @@ export class QueryProcessor {
     try {
       const now = new Date();
       const options: Intl.DateTimeFormatOptions = {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
@@ -249,9 +253,13 @@ export class QueryProcessor {
         options.timeZone = timezone;
       }
 
-      return now.toLocaleTimeString("en-US", options);
+      return now.toLocaleString("en-US", options);
     } catch {
-      return new Date().toLocaleTimeString("en-US", {
+      return new Date().toLocaleString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
