@@ -20,7 +20,17 @@ export const api = new Hono();
 // Health
 api.get("/health", getHealth);
 
-// SSE streams
+// SSE streams — disable proxy buffering so Nginx/ingress forwards data immediately.
+// Without this, heartbeats get stuck in Nginx's response buffer and the proxy
+// considers the connection idle after its read timeout (~60s), killing the SSE.
+const sseHeaders = async (c: any, next: any) => {
+  c.header("X-Accel-Buffering", "no");
+  c.header("Cache-Control", "no-cache, no-transform");
+  await next();
+};
+api.use("/photo-stream", sseHeaders);
+api.use("/transcription-stream", sseHeaders);
+api.use("/chat/stream", sseHeaders);
 api.get("/photo-stream", photoStream);
 api.get("/transcription-stream", transcriptionStream);
 api.get("/chat/stream", chatStream);
