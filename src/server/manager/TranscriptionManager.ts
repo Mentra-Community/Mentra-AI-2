@@ -58,8 +58,8 @@ export class TranscriptionManager {
   private currentSilenceMs: number = 0; // Track current silence timer duration to prevent downgrades
 
   // Config
-  private readonly SILENCE_TIMEOUT_MS = 1500;  // 1.5s silence = query complete for interim transcriptions
-  private readonly FINAL_SILENCE_TIMEOUT_MS = 3500; // 5s after isFinal — gives user time to add another sentence
+  private readonly SILENCE_TIMEOUT_MS = 2000;  // 1.5s silence = query complete for interim transcriptions
+  private readonly FINAL_SILENCE_TIMEOUT_MS = 2000; // 5s after isFinal — gives user time to add another sentence
   private readonly MAX_LISTENING_MS = 15000;   // 15s max listening time
 
   // Callback for when query is ready
