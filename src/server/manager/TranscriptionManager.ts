@@ -93,6 +93,9 @@ export class TranscriptionManager {
    * Wire up the transcription listener on the glasses session
    */
   setup(session: AppSession): void {
+    // Reset zombie flag — critical for reconnect (destroy() sets this to true)
+    this.destroyed = false;
+
     this.unsubscribe = session.events.onTranscription(
       (data: TranscriptionData) => {
         this.handleTranscription(data);

@@ -7,7 +7,7 @@
 
 import { AppServer, AppSession } from "@mentra/sdk";
 import { sessions } from "./manager/SessionManager";
-import { broadcastChatEvent, clearPendingEvents } from "./api/chat";
+import { broadcastChatEvent } from "./api/chat";
 import { connectDB } from "./db/connection";
 
 const WELCOME_SOUND_URL = process.env.WELCOME_SOUND_URL;
@@ -39,13 +39,18 @@ export class MentraAI extends AppServer {
   ): Promise<void> {
     console.log(`🚀 Mentra AI session started for ${userId} | model: ${session.capabilities?.modelName ?? 'unknown (capabilities not yet loaded)'} | hasCamera: ${session.capabilities?.hasCamera} | hasDisplay: ${session.capabilities?.hasDisplay} | hasSpeaker: ${session.capabilities?.hasSpeaker}`);
 
+    // Check if this is a reconnect (grace period was active)
+    const wasReconnect = sessions.cancelRemoval(userId);
+
     // Get or create user
     const user = sessions.getOrCreate(userId);
 
-    // Initialize async components (database, settings)
-    await user.initialize();
+    // Initialize async components (database, settings) — skip on reconnect (already initialized)
+    if (!wasReconnect) {
+      await user.initialize();
+    }
 
-    // Wire up glasses session
+    // Wire up glasses session (re-wires transcription + input listeners)
     user.setAppSession(session);
 
     // Set up transcription callback for query processing
@@ -96,18 +101,28 @@ export class MentraAI extends AppServer {
       console.log(`🧪 [DEBUG] modelName.value after 10s: ${delayedModel ?? 'STILL NULL'} for ${userId}`);
     }, 10000);
 
-    // Play welcome message (with delay for camera-only glasses)
-    this.playWelcome(session, sessionId);
+    // Play welcome message — skip on reconnect (user already knows the app is running)
+    if (!wasReconnect) {
+      this.playWelcome(session, sessionId);
+    }
 
     // Notify frontend that glasses session is active
     const hasDisplay = session.capabilities?.hasDisplay ?? false;
-    broadcastChatEvent(userId, {
-      type: "session_started",
-      glassesType: hasDisplay ? "display" : "camera",
-      timestamp: new Date().toISOString(),
-    });
-
-    console.log(`✅ Mentra AI ready for ${userId}`);
+    if (wasReconnect) {
+      broadcastChatEvent(userId, {
+        type: "session_reconnected",
+        glassesType: hasDisplay ? "display" : "camera",
+        timestamp: new Date().toISOString(),
+      });
+      console.log(`🔄 Mentra AI reconnected for ${userId}`);
+    } else {
+      broadcastChatEvent(userId, {
+        type: "session_started",
+        glassesType: hasDisplay ? "display" : "camera",
+        timestamp: new Date().toISOString(),
+      });
+      console.log(`✅ Mentra AI ready for ${userId}`);
+    }
   }
 
   /**
@@ -135,28 +150,30 @@ export class MentraAI extends AppServer {
   }
 
   /**
-   * Called when a user closes the app or disconnects
+   * Called when a user closes the app or disconnects.
+   * Uses a grace period — keeps the User alive for 60s so a quick
+   * reconnect preserves conversation history and all state.
    */
   protected async onStop(
     sessionId: string,
     userId: string,
     reason: string,
   ): Promise<void> {
-    console.log(`👋 Mentra AI session ended for ${userId}: ${reason}`);
+    console.log(`👋 Mentra AI session disconnected for ${userId}: ${reason}`);
 
-    // Notify frontend BEFORE cleanup — chatClients is independent from sessions
+    // Notify frontend — session is reconnecting, NOT ended (keep messages)
     broadcastChatEvent(userId, {
-      type: "session_ended",
+      type: "session_reconnecting",
       reason,
       timestamp: new Date().toISOString(),
     });
 
     try {
-      clearPendingEvents(userId);
-      sessions.remove(userId);
-      console.log(`🗑️ Cleaned up session for ${userId}`);
+      // Soft remove: detach glasses, start 60s grace period timer
+      // Do NOT clearPendingEvents — preserve them for potential reconnect
+      sessions.softRemove(userId);
     } catch (err) {
-      console.error(`Error during session cleanup for ${userId}:`, err);
+      console.error(`Error during session soft remove for ${userId}:`, err);
     }
   }
 }
