@@ -301,7 +301,15 @@ function ChatInterface({ userId, recipientId, onEnableDebugMode }: ChatInterface
             setIsLoadingHistory(false);
           } else if (data.type === 'session_started') {
             setSessionActive(true);
+          } else if (data.type === 'session_reconnecting') {
+            // Grace period active — keep messages, just show disconnected banner
+            setSessionActive(false);
+            setIsProcessing(false);
+          } else if (data.type === 'session_reconnected') {
+            // Reconnected within grace period — messages are intact
+            setSessionActive(true);
           } else if (data.type === 'session_ended') {
+            // Grace period expired or hard disconnect — full cleanup
             setSessionActive(false);
             setIsProcessing(false);
             setMessages([]);

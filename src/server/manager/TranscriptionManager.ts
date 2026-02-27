@@ -55,9 +55,11 @@ export class TranscriptionManager {
   // Timers
   private silenceTimeout: NodeJS.Timeout | undefined;
   private maxListeningTimeout: NodeJS.Timeout | undefined;
+  private currentSilenceMs: number = 0; // Track current silence timer duration to prevent downgrades
 
   // Config
-  private readonly SILENCE_TIMEOUT_MS = 3000;  // 4s silence = query complete (gives user time to add to query)
+  private readonly SILENCE_TIMEOUT_MS = 2000;  // 1.5s silence = query complete for interim transcriptions
+  private readonly FINAL_SILENCE_TIMEOUT_MS = 2000; // 5s after isFinal — gives user time to add another sentence
   private readonly MAX_LISTENING_MS = 15000;   // 15s max listening time
 
   // Callback for when query is ready
@@ -91,6 +93,9 @@ export class TranscriptionManager {
    * Wire up the transcription listener on the glasses session
    */
   setup(session: AppSession): void {
+    // Reset zombie flag — critical for reconnect (destroy() sets this to true)
+    this.destroyed = false;
+
     this.unsubscribe = session.events.onTranscription(
       (data: TranscriptionData) => {
         this.handleTranscription(data);
@@ -108,15 +113,20 @@ export class TranscriptionManager {
     // Broadcast to SSE clients
     this.broadcast(text, isFinal ?? false);
 
+    // Transcription logging disabled for cleaner terminal
+    // console.log(`🎙️ [RAW] text="${text.slice(0, 60)}" | isFinal=${isFinal ?? false} | speaker=${speakerId} | isListening=${this.isListening} | isProcessing=${this.isProcessing}`);
+
     // Ignore if we're currently processing a query
     if (this.isProcessing) {
+      // console.log(`🚫 [DROP] Dropped (isProcessing=true): "${text.slice(0, 60)}"`);
       return;
     }
 
-    // If we're listening to a specific speaker, ignore others
-    if (this.isListening && this.activeSpeakerId && speakerId !== this.activeSpeakerId) {
-      return;
-    }
+    // Speaker diarization disabled for testing — accept all speakers
+    // if (this.isListening && this.activeSpeakerId && speakerId !== this.activeSpeakerId) {
+    //   console.log(`🚫 [DROP] Dropped (wrong speaker ${speakerId} != ${this.activeSpeakerId}): "${text.slice(0, 60)}"`);
+    //   return;
+    // }
 
     // Check for wake word
     const wakeResult = detectWakeWord(text);
@@ -146,17 +156,40 @@ export class TranscriptionManager {
       // Utterance complete — snapshot into confirmed transcript
       if (utteranceId && utteranceId === this.lastConfirmedUtteranceId) {
         // Duplicate isFinal for same utterance — ignore to avoid double-appending
+        // console.log(`⏱️ [ACCUMULATE] Duplicate isFinal for utterance ${utteranceId}, skipping`);
       } else {
         this.confirmedTranscript = (this.confirmedTranscript + ' ' + cleanText).trim();
         this.lastConfirmedUtteranceId = utteranceId;
+        // console.log(`⏱️ [ACCUMULATE] isFinal appended | utteranceId=${utteranceId} | cleanText="${cleanText.slice(0, 60)}" | before="${before.slice(0, 60)}" | after="${this.confirmedTranscript.slice(0, 80)}"`);
       }
       this.currentUtteranceText = '';
     } else {
       // Interim update — overwrite in-progress portion (cumulative within same utterance)
       this.currentUtteranceText = cleanText;
+      // console.log(`⏱️ [ACCUMULATE] interim | utteranceId=${utteranceId} | currentUtterance="${cleanText.slice(0, 60)}" | confirmed="${this.confirmedTranscript.slice(0, 60)}" | full="${this.getFullTranscript().slice(0, 80)}"`);
     }
 
-    this.resetSilenceTimeout();
+    // After a finalized utterance, give a longer window so the user can
+    // add another sentence to the same query (e.g. "what's the weather?" ...pause... "should I wear a jacket?")
+    // CRITICAL: Never let an interim transcription downgrade a post-final timer.
+    // When isFinal fires, we set 5s. If a new interim arrives 2s later, we should NOT
+    // reset to 1.5s — the user is still in the grace period. Only reset to the shorter
+    // duration once the new utterance itself finalizes (proving the user finished speaking).
+    let timeoutMs: number;
+    if (isFinal) {
+      timeoutMs = this.FINAL_SILENCE_TIMEOUT_MS;
+      this.currentSilenceMs = timeoutMs;
+    } else if (this.currentSilenceMs > this.SILENCE_TIMEOUT_MS) {
+      // We're in a post-final grace period and an interim arrived — keep the longer timer
+      // but DON'T reset it (the user is speaking, which is good — let the existing timer run)
+      // console.log(`⏱️ [TIMER] Interim arrived during post-final grace period, NOT resetting (${this.currentSilenceMs}ms remaining) | text="${text.slice(0, 50)}"`);
+      return;
+    } else {
+      timeoutMs = this.SILENCE_TIMEOUT_MS;
+      this.currentSilenceMs = timeoutMs;
+    }
+    // console.log(`⏱️ [TIMER] Resetting silence timer to ${timeoutMs}ms (isFinal=${isFinal ?? false}) | text="${text.slice(0, 50)}" | confirmed="${this.confirmedTranscript.slice(0, 50)}" | current="${this.currentUtteranceText.slice(0, 50)}"`);
+    this.resetSilenceTimeout(timeoutMs);
 
     // Show live transcription on display glasses HUD
     if (this.isListening && this.user.appSession?.capabilities?.hasDisplay) {
@@ -203,7 +236,7 @@ export class TranscriptionManager {
   /**
    * Reset the silence timeout
    */
-  private resetSilenceTimeout(): void {
+  private resetSilenceTimeout(overrideMs?: number): void {
     if (this.silenceTimeout) {
       clearTimeout(this.silenceTimeout);
     }
@@ -212,7 +245,7 @@ export class TranscriptionManager {
       if (this.isListening && !this.isProcessing && this.getFullTranscript().length > 0) {
         this.processCurrentQuery();
       }
-    }, this.SILENCE_TIMEOUT_MS);
+    }, overrideMs ?? this.SILENCE_TIMEOUT_MS);
   }
 
   /**
@@ -279,6 +312,7 @@ export class TranscriptionManager {
     this.currentUtteranceText = '';
     this.lastConfirmedUtteranceId = undefined;
     this.transcriptionStartTime = 0;
+    this.currentSilenceMs = 0;
     this.pendingPhoto = null;
     this.clearTimers();
   }
