@@ -141,9 +141,9 @@ export class MentraAI extends AppServer {
       // Camera-only glasses: play welcome audio after delay
       if (WELCOME_SOUND_URL) {
         setTimeout(() => {
-          session.audio.playAudio({ audioUrl: WELCOME_SOUND_URL }).catch((err) => {
-            console.debug("Welcome audio failed:", err);
-          });
+          // session.audio.playAudio({ audioUrl: WELCOME_SOUND_URL }).catch((err) => {
+          //   console.debug("Welcome audio failed:", err);
+          // });
         }, 1000);
       }
     }
